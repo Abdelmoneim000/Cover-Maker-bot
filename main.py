@@ -6,6 +6,8 @@ import traceback
 import os
 import re
 import difflib
+import uuid
+
 
 import asyncio
 import difflib
@@ -928,13 +930,17 @@ async def download_file_async(session, subfile_id, subfile, dest_filename):
   loop = asyncio.get_event_loop()
   await loop.run_in_executor(None, lambda: mega.download((subfile_id, subfile), dest_filename=dest_filename))  # <-- Added this too
 
-async def download_all_urls(mega, urls):
+async def download_all_urls(mega, urls, user_id):
+    # Create a unique directory for the user's request
+    user_dir = f"./images/{user_id}"
+    os.makedirs(user_dir, exist_ok=True)
+
     return_array = []
     for i, url in enumerate(urls):
         print(f"{(i+1)} Downloading {url.replace('#!', 'file/')}")
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, mega.download_url, url, "./images", f"image_{i+1}.png")
-        return_array.append({"result": result, "path": f"./images/image_{i+1}.png"})
+        result = await loop.run_in_executor(None, mega.download_url, url, user_dir, f"image_{i+1}.png")
+        return_array.append({"result": result, "path": f"{user_dir}/image_{i+1}.png"})
     return return_array
 
 def cleanup():
@@ -946,52 +952,58 @@ def cleanup():
 @bot.command(pass_context=True)
 @commands.cooldown(1, 120, commands.BucketType.user)
 async def cover(ctx, *, song_name: str):
-  user = ctx.author
+    user = ctx.author
+    user_id = user.id
 
-  embed = discord.Embed(
+    embed = discord.Embed(
           title="",
           description=
           f"Working on your request for cover arts matching **{song_name}**.",
           color=0xabe86a)
-  await user.send(embed=embed)
-  try:
-      if song_name:
-          while True:
-              if os.path.exists("all_data.json"):
-                  print("all_data.json exists")
-                  with open("all_data.json", "r") as f:
-                      all_data = json.load(f)
+    await user.send(embed=embed)
+    try:
+        if song_name:
+            while True:
+                if os.path.exists("all_data.json"):
+                    print("all_data.json exists")
+                    with open("all_data.json", "r") as f:
+                        all_data = json.load(f)
 
-                  if all_data:
-                      simplified_file_name = song_name.lower().replace("_", " ")
-                      urls = get_matched_urls(all_data, simplified_file_name)
-                      urls = set(urls)
-                      print(f"URLs: {urls}")
-                      break
-              else: 
-                  print("all_data.json not found. Getting all files...")
-                  result = await get_all_files()
-          paths_result = await download_all_urls(mega, urls)
+                    if all_data:
+                        simplified_file_name = song_name.lower().replace("_", " ")
+                        urls = get_matched_urls(all_data, simplified_file_name)
+                        urls = set(urls)
+                        print(f"URLs: {urls}")
+                        break
+                else: 
+                    print("all_data.json not found. Getting all files...")
+                    result = await get_all_files()
+            paths_result = await download_all_urls(mega, urls, user_id)
 
-          if len(paths_result) > 0:
-              embed = discord.Embed(
+
+            if len(paths_result) > 0:
+                embed = discord.Embed(
                       title="",
                       description=f"Found **{len(paths_result)}** cover arts. Uploading...",
                       color=0xabe86a)
-              await ctx.author.send(embed=embed)
-              for result in paths_result:
-                  path = result["path"]
-                  await ctx.author.send(file=discord.File(path))
-          else:
-              embed = discord.Embed(
+                await ctx.author.send(embed=embed)
+                for result in paths_result:
+                    path = result["path"]
+                    await ctx.author.send(file=discord.File(path))
+            else:
+                embed = discord.Embed(
                       title="",
                       description=f"No cover arts found with the name **{song_name}**.",
                       color=0xe69f23)
-              await user.send(embed=embed)
-          cleanup()
-  except Exception as e:
-      traceback_info = traceback.format_exc()
-      await ctx.author.send(
+                await user.send(embed=embed)
+            # Clean up the user's directory
+            cleanup_dir = f"./images/{user_id}"
+            for file in os.listdir(cleanup_dir):
+                os.remove(os.path.join(cleanup_dir, file))
+            os.rmdir(cleanup_dir)
+    except Exception as e:
+        traceback_info = traceback.format_exc()
+        await ctx.author.send(
               f"An error occurred: {str(e)}\n```{traceback_info}```")
 
 @bot.command(pass_context=True)

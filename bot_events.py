@@ -7,7 +7,7 @@ import discord.interactions as interactions
 from discord.ext import commands, tasks
 
 # checking messages in channels
-async def on_message(bot, message):
+async def message_event(bot, message):
     if message.author == bot.user:
         return
 
